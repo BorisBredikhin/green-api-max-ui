@@ -9,6 +9,7 @@ Single-package React Router 8 app in **framework mode** (SSR on), UI built with 
 - `pnpm install`
 - `pnpm dev` — dev server with HMR on http://localhost:5173
 - `pnpm typecheck` — the **only** verification command (no lint, no tests, no formatter, no CI in this repo). Run it before calling any work done.
+  NEVER run `pnpm dev` just for checking — use `pnpm build` or `pnpm typecheck` instead.
 - `pnpm build` — `react-router build`, emits `build/client` + `build/server`
 - `pnpm start` — serves `./build/server/index.js` on :3000; requires a prior `pnpm build`
 - `npx react-router routes` — prints the resolved route tree; fastest way to confirm a route is registered
