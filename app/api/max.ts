@@ -49,8 +49,11 @@ export type ChatHistoryMessage = {
   chatId: string;
   chatType: ChatType;
   textMessage?: string;
+  /** Chat title, which for a group differs from the sender's name. */
+  chatName?: string;
   senderId?: string;
   senderName?: string;
+  senderPhoneNumber?: number;
   senderType?: ChatType;
   senderContactName?: string;
   statusMessage?: OutgoingStatus;

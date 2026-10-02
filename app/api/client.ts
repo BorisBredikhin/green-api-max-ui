@@ -14,6 +14,15 @@ export type GreenApiCredentials = {
   baseUrl: string;
 };
 
+export type GreenApiUrlOptions = {
+  /**
+   * Path segments that go *after* the token. DeleteNotification is the one
+   * method that needs this: its `receiptId` trails the token, i.e.
+   * `{baseUrl}/waInstance{id}/deleteNotification/{token}/{receiptId}`.
+   */
+  afterToken?: string;
+};
+
 /**
  * Method paths use the camelCase names from the MAX API docs and are placed
  * between the instance id and the token, e.g.
@@ -21,12 +30,16 @@ export type GreenApiCredentials = {
  */
 export const buildUrl = (
   methodPath: string,
-  credentials: Pick<GreenApiCredentials, "idInstance" | "apiTokenInstance" | "baseUrl">
+  credentials: Pick<GreenApiCredentials, "idInstance" | "apiTokenInstance" | "baseUrl">,
+  options: GreenApiUrlOptions = {}
 ): string => {
   const { idInstance, apiTokenInstance, baseUrl } = credentials;
   const base = baseUrl.replace(/\/$/, "");
   const path = methodPath.replace(/^\//, "");
-  return `${base}/waInstance${idInstance}/${path}/${apiTokenInstance}`;
+  const suffix = options.afterToken
+    ? `/${options.afterToken.replace(/^\//, "")}`
+    : "";
+  return `${base}/waInstance${idInstance}/${path}/${apiTokenInstance}${suffix}`;
 };
 
 /** Error bodies look like `{ statusCode, timestamp, path, message }` or `{ status, reason }`. */
@@ -68,18 +81,20 @@ export class GreenApiError extends Error {
 
 export type GreenApiRequestConfig = Omit<AxiosRequestConfig, "url" | "baseURL"> & {
   credentials: GreenApiCredentials;
+  /** See {@link GreenApiUrlOptions.afterToken}. Not an axios option. */
+  afterToken?: string;
 };
 
 export const greenApiRequest = async <T>(
   methodPath: string,
   config: GreenApiRequestConfig
 ): Promise<T> => {
-  const { credentials, headers, ...rest } = config;
+  const { credentials, headers, afterToken, ...rest } = config;
 
   try {
     const response = await axios.request<T>({
       ...rest,
-      url: buildUrl(methodPath, credentials),
+      url: buildUrl(methodPath, credentials, { afterToken }),
       headers: {
         "Content-Type": "application/json",
         ...headers,
