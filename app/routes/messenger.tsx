@@ -62,7 +62,7 @@ export default function Messenger() {
     const merged = discoverContacts(
       contacts,
       poller.messages,
-      reportedChatIdsRef.current
+      reportedChatIdsRef.current,
     );
     // An unchanged list means every chat in the buffer was already reported.
     if (merged !== contacts) setContacts(merged);
@@ -70,7 +70,7 @@ export default function Messenger() {
 
   const selectedContact = useMemo(
     () => contacts.find((contact) => contact.chatId === selectedChatId) ?? null,
-    [contacts, selectedChatId]
+    [contacts, selectedChatId],
   );
 
   const liveMessages = useMemo(
@@ -78,7 +78,7 @@ export default function Messenger() {
       selectedChatId
         ? poller.messages.filter((message) => message.chatId === selectedChatId)
         : [],
-    [poller.messages, selectedChatId]
+    [poller.messages, selectedChatId],
   );
 
   const openChat = (chatId: string) => {
@@ -108,6 +108,7 @@ export default function Messenger() {
     <Layout style={{ height: "100vh" }}>
       <Layout.Header
         style={{
+          backgroundColor: "#88f",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
