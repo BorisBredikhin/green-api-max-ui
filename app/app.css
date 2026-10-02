@@ -4,3 +4,32 @@ html,
 body {
   height: 100%;
 }
+
+/* Layout-only rules: colours all come from antd theme tokens inline, so these
+   classes stay free of theme-specific values. */
+.messenger {
+  height: 100%;
+  overflow: hidden;
+}
+
+.messenger__pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.messenger__contacts {
+  flex: 0 0 320px;
+}
+
+.messenger__chat {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.messenger__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}

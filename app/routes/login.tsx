@@ -47,7 +47,7 @@ export default function Login() {
         padding: 24,
       }}
     >
-      <Space direction="vertical" style={{ width: "100%", maxWidth: 420 }}>
+      <Space orientation="vertical" style={{ width: "100%", maxWidth: 420 }}>
         <Typography.Title level={2} style={{ textAlign: "center", marginBottom: 0 }}>
           Вход
         </Typography.Title>
