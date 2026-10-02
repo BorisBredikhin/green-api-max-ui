@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Flex, Form, Input, Modal, Typography } from "antd";
 
 import type { StoredContact } from "~/api/contacts";
-import { GreenApiError, type GreenApiCredentials } from "~/api/client";
+import { GreenApiError, getErrorMessage, type GreenApiCredentials } from "~/api/client";
 import {
   checkAccount,
   getContactInfo,
@@ -129,23 +129,19 @@ export function AddContactModal({
       });
       handleClose();
     } catch (error) {
-      if (error instanceof GreenApiError) {
-        if (error.status === 469) {
-          setCooldownUntil(Date.now() + RATE_LIMIT_COOLDOWN_SECONDS * 1000);
-          setFeedback({
-            type: "warning",
-            title:
-              "Превышен лимит проверок номеров. Повторите попытку позже — проверки на этом инстансе временно ограничены.",
-          });
-          return;
-        }
-        setFeedback({ type: "error", title: error.message });
-        return;
+      if (error instanceof GreenApiError && error.status === 469) {
+        setCooldownUntil(Date.now() + RATE_LIMIT_COOLDOWN_SECONDS * 1000);
+        setFeedback({
+          type: "warning",
+          title:
+            "Превышен лимит проверок номеров. Повторите попытку позже — проверки на этом инстансе временно ограничены.",
+        });
+      } else {
+        setFeedback({
+          type: "error",
+          title: getErrorMessage(error, "Не удалось связаться с GREEN API"),
+        });
       }
-      setFeedback({
-        type: "error",
-        title: "Не удалось связаться с GREEN API",
-      });
     } finally {
       setSubmitting(false);
     }

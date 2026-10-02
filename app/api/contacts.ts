@@ -1,3 +1,11 @@
+import type { ChatHistoryMessage } from "./max";
+import {
+  isNonEmptyString,
+  isRecord,
+  readJson,
+  writeJson,
+} from "~/lib/storage";
+
 const KEY_CONTACTS = "greenApi.contacts";
 
 export type StoredContact = {
@@ -8,56 +16,82 @@ export type StoredContact = {
   addedAt: number;
 };
 
-const isStoredContact = (value: unknown): value is StoredContact => {
-  if (typeof value !== "object" || value === null) return false;
-  const contact = value as Partial<StoredContact>;
-  return (
-    typeof contact.chatId === "string" &&
-    contact.chatId !== "" &&
-    typeof contact.phoneNumber === "number"
-  );
-};
+/**
+ * MAX does not always know a phone number for a peer that reached the instance
+ * on its own, so `0` is the marker the UI reads as "no number".
+ */
+export const NO_PHONE_NUMBER = 0;
 
-export const loadContacts = (): StoredContact[] => {
-  if (typeof window === "undefined") return [];
+const isStoredContact = (value: unknown): value is StoredContact =>
+  isRecord(value) &&
+  isNonEmptyString(value.chatId) &&
+  typeof value.phoneNumber === "number";
 
-  try {
-    const raw = window.localStorage.getItem(KEY_CONTACTS);
-    if (raw === null) return [];
+const writeContacts = (contacts: StoredContact[]): void =>
+  writeJson(KEY_CONTACTS, contacts);
 
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+/** A corrupt entry reads as no contacts at all, rather than locking the user out. */
+export const loadContacts = (): StoredContact[] =>
+  readJson(KEY_CONTACTS, (value) => {
+    if (!Array.isArray(value)) return [];
 
-    return parsed
-      .filter(isStoredContact)
-      .map((contact) => ({
-        chatId: contact.chatId,
-        phoneNumber: contact.phoneNumber,
-        name: contact.name,
-        avatar: contact.avatar,
-        addedAt: contact.addedAt ?? 0,
-      }));
-  } catch {
-    // A corrupt entry should not lock the user out of the messenger.
-    return [];
-  }
-};
-
-export const saveContacts = (contacts: StoredContact[]): void => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(KEY_CONTACTS, JSON.stringify(contacts));
-};
+    return value.filter(isStoredContact).map((contact) => ({
+      chatId: contact.chatId,
+      phoneNumber: contact.phoneNumber,
+      name: contact.name ?? "",
+      avatar: contact.avatar ?? "",
+      addedAt: contact.addedAt ?? 0,
+    }));
+  }) ?? [];
 
 /** Newest first, and an existing chatId is updated in place rather than duplicated. */
 export const addContact = (contact: StoredContact): StoredContact[] => {
-  const rest = loadContacts().filter((item) => item.chatId !== contact.chatId);
-  const next = [contact, ...rest];
-  saveContacts(next);
+  const next = [
+    contact,
+    ...loadContacts().filter((item) => item.chatId !== contact.chatId),
+  ];
+  writeContacts(next);
   return next;
 };
 
-export const removeContact = (chatId: string): StoredContact[] => {
-  const next = loadContacts().filter((item) => item.chatId !== chatId);
-  saveContacts(next);
+/** Best display name available, falling back to the raw chat id. */
+const toStoredContact = (message: ChatHistoryMessage): StoredContact => ({
+  chatId: message.chatId,
+  phoneNumber: message.senderPhoneNumber ?? NO_PHONE_NUMBER,
+  name:
+    message.chatName ||
+    message.senderContactName ||
+    message.senderName ||
+    message.chatId,
+  avatar: "",
+  addedAt: Date.now(),
+});
+
+/**
+ * Adds the chats that `messages` revealed but the list does not hold yet, and
+ * returns the whole list newest first — unchanged when there was nothing to add.
+ *
+ * `reported` belongs to the caller: it remembers which chats this pass has
+ * already emitted, so a re-render cannot add the same chat twice.
+ */
+export const discoverContacts = (
+  contacts: StoredContact[],
+  messages: ChatHistoryMessage[],
+  reported: Set<string>
+): StoredContact[] => {
+  const known = new Set(contacts.map((contact) => contact.chatId));
+  const additions: StoredContact[] = [];
+
+  for (const message of messages) {
+    if (known.has(message.chatId) || reported.has(message.chatId)) continue;
+    known.add(message.chatId);
+    reported.add(message.chatId);
+    additions.push(toStoredContact(message));
+  }
+
+  if (additions.length === 0) return contacts;
+
+  const next = [...additions, ...contacts];
+  writeContacts(next);
   return next;
 };

@@ -79,6 +79,14 @@ export class GreenApiError extends Error {
   }
 }
 
+/**
+ * User-facing text for a failed call. Anything that did not come from
+ * {@link greenApiRequest} — a thrown bug, a lost connection at the socket level
+ * — has no server wording to show, so callers pass their own fallback.
+ */
+export const getErrorMessage = (error: unknown, fallback: string): string =>
+  error instanceof GreenApiError ? error.message : fallback;
+
 export type GreenApiRequestConfig = Omit<AxiosRequestConfig, "url" | "baseURL"> & {
   credentials: GreenApiCredentials;
   /** See {@link GreenApiUrlOptions.afterToken}. Not an axios option. */

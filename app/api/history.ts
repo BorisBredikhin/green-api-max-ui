@@ -1,12 +1,13 @@
 import type { GreenApiCredentials } from "./client";
 import { getChatHistory, type ChatHistoryMessage } from "./max";
+import { createRateLimiter } from "~/lib/rate-limit";
 
 /**
  * Session cache for chat history.
  *
  * `getChatHistory` is limited to 1 request/second per instance, while opening a
  * chat is a synchronous user action — sweeping ten chats in a row would 429. The
- * cache absorbs the repeat visits and a min-gap scheduler serialises whatever
+ * cache absorbs the repeat visits and a min-gap limiter serialises whatever
  * still misses, so the instance never sees a second request inside its window.
  *
  * Entries live in module scope on purpose: they should outlive a ChatPanel
@@ -14,12 +15,6 @@ import { getChatHistory, type ChatHistoryMessage } from "./max";
  * through the route. This is deliberately session-scoped rather than persisted,
  * so nothing is written to disk.
  */
-
-/** Oldest-first, as rendered — `getChatHistory` answers newest-first. */
-export type HistoryEntry = {
-  messages: ChatHistoryMessage[];
-  fetchedAt: number;
-};
 
 export const HISTORY_TTL_MS = 30_000;
 
@@ -36,13 +31,13 @@ const MESSAGE_CACHE_LIMIT = 100;
 const cacheKey = (credentials: GreenApiCredentials, chatId: string): string =>
   `${credentials.idInstance}:${chatId}`;
 
-const cache = new Map<string, HistoryEntry>();
-
-const isStoredEntry = (value: unknown): value is HistoryEntry => {
-  if (typeof value !== "object" || value === null) return false;
-  const entry = value as Partial<HistoryEntry>;
-  return Array.isArray(entry.messages) && typeof entry.fetchedAt === "number";
+/** Oldest-first, as rendered — `getChatHistory` answers newest-first. */
+type HistoryEntry = {
+  messages: ChatHistoryMessage[];
+  fetchedAt: number;
 };
+
+const cache = new Map<string, HistoryEntry>();
 
 const writeEntry = (key: string, entry: HistoryEntry): void => {
   // Re-inserting moves the key to the end, so the Map doubles as an LRU and the
@@ -56,33 +51,24 @@ const writeEntry = (key: string, entry: HistoryEntry): void => {
   }
 };
 
-/** Synchronous read for the first paint when a chat is opened. */
-export const getCachedHistory = (
-  credentials: GreenApiCredentials,
-  chatId: string
-): ChatHistoryMessage[] | null => {
-  const entry = cache.get(cacheKey(credentials, chatId));
-  if (!isStoredEntry(entry)) return null;
-  return entry.messages;
+/**
+ * Everything the first paint needs, in one lookup: `messages` is null for a chat
+ * this session has never fetched, and `stale` says whether to revalidate what
+ * came back.
+ */
+export type HistorySnapshot = {
+  messages: ChatHistoryMessage[] | null;
+  stale: boolean;
 };
 
-export const isHistoryCacheStale = (
+export const readHistory = (
   credentials: GreenApiCredentials,
   chatId: string,
   ttlMs = HISTORY_TTL_MS
-): boolean => {
+): HistorySnapshot => {
   const entry = cache.get(cacheKey(credentials, chatId));
-  if (!isStoredEntry(entry)) return true;
-  return Date.now() - entry.fetchedAt > ttlMs;
-};
-
-export const putHistory = (
-  credentials: GreenApiCredentials,
-  chatId: string,
-  messages: ChatHistoryMessage[],
-  fetchedAt = Date.now()
-): void => {
-  writeEntry(cacheKey(credentials, chatId), { messages, fetchedAt });
+  if (!entry) return { messages: null, stale: true };
+  return { messages: entry.messages, stale: Date.now() - entry.fetchedAt > ttlMs };
 };
 
 /**
@@ -97,7 +83,7 @@ export const appendToHistoryCache = (
 ): void => {
   const key = cacheKey(credentials, chatId);
   const entry = cache.get(key);
-  if (!isStoredEntry(entry)) return;
+  if (!entry) return;
   if (entry.messages.some((item) => item.idMessage === message.idMessage)) return;
 
   writeEntry(key, {
@@ -106,32 +92,7 @@ export const appendToHistoryCache = (
   });
 };
 
-let chain: Promise<unknown> = Promise.resolve();
-let lastStartedAt = 0;
-
-/**
- * Runs tasks one at a time with a minimum gap between their start times. A
- * rejected task must not poison the chain, so the tail swallows errors and only
- * the caller sees them.
- */
-const schedule = <T>(task: () => Promise<T>): Promise<T> => {
-  const run = chain.then(async () => {
-    const wait = HISTORY_MIN_GAP_MS - (Date.now() - lastStartedAt);
-    if (wait > 0) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, wait);
-      });
-    }
-    lastStartedAt = Date.now();
-    return task();
-  });
-
-  chain = run.then(
-    () => undefined,
-    () => undefined
-  );
-  return run;
-};
+const limitHistoryRequests = createRateLimiter(HISTORY_MIN_GAP_MS);
 
 /**
  * Rate-limited history fetch. Resolves oldest-first and refreshes the cache.
@@ -143,9 +104,11 @@ export const requestHistory = (
   chatId: string,
   count: number
 ): Promise<ChatHistoryMessage[]> =>
-  schedule(async () => {
-    const history = await getChatHistory(credentials, chatId, count);
-    const messages = [...history].reverse();
-    putHistory(credentials, chatId, messages);
+  limitHistoryRequests(async () => {
+    const messages = (await getChatHistory(credentials, chatId, count)).reverse();
+    writeEntry(cacheKey(credentials, chatId), {
+      messages,
+      fetchedAt: Date.now(),
+    });
     return messages;
   });

@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { GreenApiError, type GreenApiCredentials } from "~/api/client";
+import { getErrorMessage, type GreenApiCredentials } from "~/api/client";
 import {
   INCOMING_MESSAGE_WEBHOOK,
   deleteNotification,
   isWebhookUrlConflict,
   receiveNotification,
   toChatMessage,
-  type NotificationBody,
 } from "~/api/notifications";
 import type { ChatHistoryMessage } from "~/api/max";
+import { sleep } from "~/lib/rate-limit";
 
 /**
  * Drains the instance notification queue by long poll.
@@ -51,11 +51,6 @@ const SETTINGS_BACKOFF_MS = 10_000;
 /** DeleteNotification is idempotent in practice; a few tries covers a blip. */
 const ACK_ATTEMPTS = 3;
 const ACK_RETRY_MS = 1_000;
-
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 
 export const useNotificationPoller = (
   credentials: GreenApiCredentials | null,
@@ -146,7 +141,7 @@ export const useNotificationPoller = (
             // Recorded before anything is inspected so the acknowledgement
             // happens even if the body turns out to be unusable.
             pending = notification.receiptId;
-            const body: NotificationBody | undefined = notification.body;
+            const body = notification.body;
             if (body?.typeWebhook === INCOMING_MESSAGE_WEBHOOK) {
               const message = toChatMessage(body);
               // A failure here must not cost the acknowledgement.
@@ -164,9 +159,7 @@ export const useNotificationPoller = (
           }
 
           setError(
-            caught instanceof GreenApiError
-              ? caught.message
-              : "Не удалось получить уведомления"
+            getErrorMessage(caught, "Не удалось получить уведомления")
           );
           setStatus("error");
           await sleep(ERROR_BACKOFF_MS);

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 
-import { isAuthenticated } from "~/api/auth";
+import { loadCredentials } from "~/api/auth";
+import type { GreenApiCredentials } from "~/api/client";
 
-export type AuthState = {
+export type Session = {
   /** False until the first client render, so callers can hold off on work. */
   ready: boolean;
-  authenticated: boolean;
+  /** Null while nobody is signed in. */
+  credentials: GreenApiCredentials | null;
 };
 
 /**
@@ -13,15 +15,15 @@ export type AuthState = {
  * build` prerenders `/` for SPA mode. Reading them only after mount keeps the
  * prerendered HTML and the first client render identical.
  */
-export const useIsAuthenticated = (): AuthState => {
-  const [state, setState] = useState<AuthState>({
+export const useCredentials = (): Session => {
+  const [session, setSession] = useState<Session>({
     ready: false,
-    authenticated: false,
+    credentials: null,
   });
 
   useEffect(() => {
-    setState({ ready: true, authenticated: isAuthenticated() });
+    setSession({ ready: true, credentials: loadCredentials() });
   }, []);
 
-  return state;
+  return session;
 };

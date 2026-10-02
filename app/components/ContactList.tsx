@@ -1,8 +1,8 @@
-import { PlusOutlined, UserOutlined } from "@ant-design/icons";
-import { Avatar, Badge, Button, Empty, Flex, Listy, Typography, theme } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
+import { Badge, Button, Empty, Flex, Listy, Typography, theme } from "antd";
 
 import type { StoredContact } from "~/api/contacts";
-import { formatPhone } from "~/api/phone";
+import { ContactAvatar, ContactPhone } from "./ContactIdentity";
 
 type ContactListProps = {
   contacts: StoredContact[];
@@ -86,11 +86,7 @@ export function ContactList({
                       // A zero-count badge would still occupy the dot.
                       dot={unread > 0}
                     >
-                      <Avatar
-                        size={40}
-                        src={contact.avatar || undefined}
-                        icon={<UserOutlined />}
-                      />
+                      <ContactAvatar contact={contact} />
                     </Badge>
                     <Flex vertical style={{ minWidth: 0, flex: 1 }}>
                       <Typography.Text
@@ -100,15 +96,7 @@ export function ContactList({
                       >
                         {contact.name}
                       </Typography.Text>
-                      {/* A chat discovered through a notification may carry no number. */}
-                      {contact.phoneNumber !== 0 && (
-                        <Typography.Text
-                          type="secondary"
-                          style={{ fontSize: 12 }}
-                        >
-                          {formatPhone(String(contact.phoneNumber))}
-                        </Typography.Text>
-                      )}
+                      <ContactPhone phoneNumber={contact.phoneNumber} />
                     </Flex>
                   </Flex>
                 </Button>

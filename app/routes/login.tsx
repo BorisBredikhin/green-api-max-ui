@@ -6,12 +6,10 @@ import type { Route } from "./+types/login";
 import { getBaseUrl } from "~/api/client";
 import { isAuthenticated, saveCredentials } from "~/api/auth";
 
-export function meta({}: Route.MetaArgs) {
-  return [
-    { title: "Вход" },
-    { name: "description", content: "Авторизация в GREEN API" },
-  ];
-}
+export const meta: Route.MetaFunction = () => [
+  { title: "Вход" },
+  { name: "description", content: "Авторизация в GREEN API" },
+];
 
 type LoginForm = {
   idInstance: string;

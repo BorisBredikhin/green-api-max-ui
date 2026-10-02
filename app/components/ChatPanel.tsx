@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SendOutlined, UserOutlined } from "@ant-design/icons";
+import { SendOutlined } from "@ant-design/icons";
 import {
   Alert,
-  Avatar,
   Button,
   Empty,
   Flex,
@@ -13,15 +12,15 @@ import {
 } from "antd";
 
 import type { StoredContact } from "~/api/contacts";
-import { GreenApiError, type GreenApiCredentials } from "~/api/client";
+import { getErrorMessage, type GreenApiCredentials } from "~/api/client";
 import {
   appendToHistoryCache,
-  getCachedHistory,
-  isHistoryCacheStale,
+  readHistory,
   requestHistory,
 } from "~/api/history";
 import { readChat, sendMessage, type ChatHistoryMessage } from "~/api/max";
-import { formatPhone } from "~/api/phone";
+import { createThrottle } from "~/lib/rate-limit";
+import { ContactAvatar, ContactPhone } from "./ContactIdentity";
 import { MessageBubble } from "./MessageBubble";
 
 const HISTORY_LIMIT = 100;
@@ -45,7 +44,6 @@ export function ChatPanel({ contact, credentials, liveMessages }: ChatPanelProps
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const lastReadAtRef = useRef(0);
 
   /**
    * Optimistic sends live here rather than in `history` so that a background
@@ -85,13 +83,22 @@ export function ChatPanel({ contact, credentials, liveMessages }: ChatPanelProps
     return merged;
   }, [history, liveMessages, sent, chatId]);
 
+  /**
+   * readChat is capped at 1 request/second per instance. A redundant mark costs
+   * nothing to lose, and a fresh throttle per chat means switching chats does
+   * not inherit the previous one's silence.
+   */
+  const throttleRead = useMemo(
+    () => createThrottle(READ_THROTTLE_MS),
+    [chatId, credentials]
+  );
+
   const markRead = useCallback(() => {
     if (!chatId) return;
-    const now = Date.now();
-    if (now - lastReadAtRef.current < READ_THROTTLE_MS) return;
-    lastReadAtRef.current = now;
-    void readChat(credentials, chatId).catch(() => undefined);
-  }, [chatId, credentials]);
+    throttleRead(() => {
+      void readChat(credentials, chatId).catch(() => undefined);
+    });
+  }, [chatId, credentials, throttleRead]);
 
   /**
    * Stale-while-revalidate against the session history cache. A cached chat
@@ -107,13 +114,13 @@ export function ChatPanel({ contact, credentials, liveMessages }: ChatPanelProps
     }
 
     let cancelled = false;
-    const cached = getCachedHistory(credentials, chatId);
+    const snapshot = readHistory(credentials, chatId);
 
-    setHistory(cached ?? []);
-    setLoading(cached === null);
+    setHistory(snapshot.messages ?? []);
+    setLoading(snapshot.messages === null);
     setHistoryError(null);
 
-    if (cached !== null && !isHistoryCacheStale(credentials, chatId)) {
+    if (!snapshot.stale) {
       markRead();
       return;
     }
@@ -129,11 +136,9 @@ export function ChatPanel({ contact, credentials, liveMessages }: ChatPanelProps
         if (cancelled) return;
         setLoading(false);
         // Only a chat that never rendered has nothing better to show.
-        if (cached !== null) return;
+        if (snapshot.messages !== null) return;
         setHistoryError(
-          error instanceof GreenApiError
-            ? error.message
-            : "Не удалось загрузить историю сообщений"
+          getErrorMessage(error, "Не удалось загрузить историю сообщений")
         );
       }
     };
@@ -188,9 +193,7 @@ export function ChatPanel({ contact, credentials, liveMessages }: ChatPanelProps
       setDraft("");
     } catch (error) {
       setSendError(
-        error instanceof GreenApiError
-          ? error.message
-          : "Не удалось отправить сообщение"
+        getErrorMessage(error, "Не удалось отправить сообщение")
       );
     } finally {
       setSending(false);
@@ -217,18 +220,10 @@ export function ChatPanel({ contact, credentials, liveMessages }: ChatPanelProps
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
         }}
       >
-        <Avatar
-          size={36}
-          src={contact.avatar || undefined}
-          icon={<UserOutlined />}
-        />
+        <ContactAvatar contact={contact} size={36} />
         <Flex vertical>
           <Typography.Text strong>{contact.name}</Typography.Text>
-          {contact.phoneNumber !== 0 && (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {formatPhone(String(contact.phoneNumber))}
-            </Typography.Text>
-          )}
+          <ContactPhone phoneNumber={contact.phoneNumber} />
         </Flex>
       </Flex>
 
